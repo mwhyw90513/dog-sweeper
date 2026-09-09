@@ -1,4 +1,392 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>🐶 找小狗</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+        body {
+            background: #c0c0c0;
+            font-family: 'Segoe UI', Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            touch-action: manipulation;
+        }
+        #game {
+            background: #c0c0c0;
+            padding: 10px;
+            max-width: 500px;
+            width: 100%;
+            border: 3px solid #fff;
+            border-right-color: #808080;
+            border-bottom-color: #808080;
+        }
+        /* 顶栏 */
+        #top-bar {
+            background: #c0c0c0;
+            padding: 6px 4px;
+            margin-bottom: 6px;
+            border: 2px solid #808080;
+            border-right-color: #fff;
+            border-bottom-color: #fff;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .counter, .timer {
+            background: #000;
+            color: #ff0000;
+            font-size: 28px;
+            font-weight: bold;
+            font-family: 'Courier New', monospace;
+            padding: 2px 10px;
+            min-width: 60px;
+            text-align: center;
+            letter-spacing: 2px;
+            border: 2px solid #808080;
+            border-right-color: #fff;
+            border-bottom-color: #fff;
+        }
+        #reset-btn {
+            font-size: 32px;
+            background: #c0c0c0;
+            border: 3px solid #fff;
+            border-right-color: #808080;
+            border-bottom-color: #808080;
+            padding: 0 20px;
+            cursor: pointer;
+            line-height: 1.4;
+            touch-action: manipulation;
+        }
+        #reset-btn:active {
+            border: 3px solid #808080;
+            border-right-color: #fff;
+            border-bottom-color: #fff;
+        }
+        /* 网格 */
+        #grid {
+            display: grid;
+            gap: 1px;
+            background: #808080;
+            border: 3px solid #808080;
+            border-right-color: #fff;
+            border-bottom-color: #fff;
+            touch-action: manipulation;
+        }
+        .cell {
+            background: #c0c0c0;
+            aspect-ratio: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+            font-weight: bold;
+            cursor: pointer;
+            border: 2px solid #fff;
+            border-right-color: #808080;
+            border-bottom-color: #808080;
+            touch-action: manipulation;
+            transition: none;
+            min-height: 40px;
+        }
+        .cell.revealed {
+            background: #d1d1d1;
+            border: 1px solid #808080;
+        }
+        .cell:active:not(.revealed) {
+            border: 2px solid #808080;
+            border-right-color: #fff;
+            border-bottom-color: #fff;
+        }
+        .cell.flagged {
+            background: #c0c0c0;
+        }
+        .cell.mine-exploded {
+            background: #ff0000;
+        }
+        /* 数字颜色 */
+        .n1 { color: #0000ff; }
+        .n2 { color: #008000; }
+        .n3 { color: #ff0000; }
+        .n4 { color: #000080; }
+        .n5 { color: #800000; }
+        .n6 { color: #008080; }
+        .n7 { color: #000000; }
+        .n8 { color: #808080; }
 
+        /* 难度选择 */
+        #menu {
+            display: flex;
+            gap: 6px;
+            margin-bottom: 6px;
+            flex-wrap: wrap;
+        }
+        #menu button {
+            flex: 1;
+            padding: 6px 4px;
+            font-size: 13px;
+            background: #c0c0c0;
+            border: 2px solid #fff;
+            border-right-color: #808080;
+            border-bottom-color: #808080;
+            cursor: pointer;
+            touch-action: manipulation;
+            min-width: 60px;
+        }
+        #menu button:active {
+            border: 2px solid #808080;
+            border-right-color: #fff;
+            border-bottom-color: #fff;
+        }
+        /* 弹窗样式（移动端友好） */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.5);
+            justify-content: center;
+            align-items: center;
+            z-index: 999;
+        }
+        .modal-overlay.active {
+            display: flex;
+        }
+        .modal-box {
+            background: #c0c0c0;
+            padding: 30px 24px;
+            border: 4px solid #fff;
+            border-right-color: #808080;
+            border-bottom-color: #808080;
+            text-align: center;
+            max-width: 300px;
+            width: 90%;
+        }
+        .modal-box h2 {
+            font-size: 24px;
+            margin-bottom: 12px;
+        }
+        .modal-box p {
+            font-size: 18px;
+            margin-bottom: 16px;
+        }
+        .modal-box button {
+            font-size: 20px;
+            padding: 8px 30px;
+            background: #c0c0c0;
+            border: 3px solid #fff;
+            border-right-color: #808080;
+            border-bottom-color: #808080;
+            cursor: pointer;
+            touch-action: manipulation;
+        }
+        .modal-box button:active {
+            border: 3px solid #808080;
+            border-right-color: #fff;
+            border-bottom-color: #fff;
+        }
+        /* 响应式 */
+        @media (max-width: 420px) {
+            .cell { font-size: 18px; min-height: 34px; }
+            .counter, .timer { font-size: 22px; min-width: 50px; padding: 2px 6px; }
+            #reset-btn { font-size: 26px; padding: 0 14px; }
+            #menu button { font-size: 11px; padding: 4px 2px; }
+        }
+        @media (max-width: 350px) {
+            .cell { font-size: 14px; min-height: 28px; }
+            .counter, .timer { font-size: 18px; min-width: 40px; }
+            #reset-btn { font-size: 20px; padding: 0 10px; }
+        }
+    </style>
+</head>
+<body>
+
+<div id="game">
+    <!-- 顶栏 -->
+    <div id="top-bar">
+        <div class="counter" id="counter">010</div>
+        <button id="reset-btn">🐾</button>
+        <div class="timer" id="timer">000</div>
+    </div>
+
+    <!-- 难度菜单 -->
+    <div id="menu">
+        <button data-level="easy">🐶 初级</button>
+        <button data-level="medium">🐶 中级</button>
+        <button data-level="hard">🐶 高级</button>
+    </div>
+
+    <!-- 网格 -->
+    <div id="grid"></div>
+</div>
+
+<!-- 弹窗 -->
+<div class="modal-overlay" id="modal">
+    <div class="modal-box">
+        <h2 id="modal-title">😊</h2>
+        <p id="modal-msg">消息</p>
+        <button id="modal-btn">再来一局</button>
+    </div>
+</div>
+
+<script>
+// ============================================================
+//  DogSweeper - 移动端扫雷（找小狗）
+// ============================================================
+
+// ----- 配置 -----
+const LEVELS = {
+    easy:   { rows: 9, cols: 9, dogs: 10 },
+    medium: { rows: 16, cols: 16, dogs: 40 },
+    hard:   { rows: 16, cols: 30, dogs: 99 }
+};
+
+let config = { rows: 9, cols: 9, dogs: 10 };
+
+// ----- 状态 -----
+let grid = [];              // 二维数组：每个格子 { revealed, flagged, dog, adjCount }
+let dogPositions = new Set();
+let revealedCount = 0;
+let flagCount = 0;
+let gameOver = false;
+let firstClick = true;
+let timerRunning = false;
+let seconds = 0;
+let timerInterval = null;
+
+const gridEl = document.getElementById('grid');
+const counterEl = document.getElementById('counter');
+const timerEl = document.getElementById('timer');
+const resetBtn = document.getElementById('reset-btn');
+const modal = document.getElementById('modal');
+const modalTitle = document.getElementById('modal-title');
+const modalMsg = document.getElementById('modal-msg');
+const modalBtn = document.getElementById('modal-btn');
+
+// 防止长按菜单
+document.addEventListener('contextmenu', e => e.preventDefault());
+
+// ----- 初始化 -----
+function initGame(level = 'easy') {
+    // 停止计时器
+    if (timerInterval) {
+        clearInterval(timerInterval);
+        timerInterval = null;
+    }
+    timerRunning = false;
+    seconds = 0;
+    timerEl.textContent = '000';
+
+    config = LEVELS[level];
+    const { rows, cols, dogs } = config;
+
+    // 重置状态
+    grid = [];
+    dogPositions = new Set();
+    revealedCount = 0;
+    flagCount = 0;
+    gameOver = false;
+    firstClick = true;
+    resetBtn.textContent = '🐾';
+
+    // 生成空网格
+    for (let r = 0; r < rows; r++) {
+        grid[r] = [];
+        for (let c = 0; c < cols; c++) {
+            grid[r][c] = {
+                revealed: false,
+                flagged: false,
+                dog: false,
+                adjCount: 0
+            };
+        }
+    }
+
+    // 渲染网格
+    gridEl.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+    gridEl.innerHTML = '';
+    for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+            const cell = document.createElement('div');
+            cell.className = 'cell';
+            cell.dataset.r = r;
+            cell.dataset.c = c;
+            cell.addEventListener('click', () => handleLeftClick(r, c));
+            cell.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                handleRightClick(r, c);
+            });
+            // 移动端长按触发右键（插旗）
+            let longPressTimer = null;
+            cell.addEventListener('touchstart', (e) => {
+                longPressTimer = setTimeout(() => {
+                    e.preventDefault();
+                    handleRightClick(r, c);
+                }, 400);
+            });
+            cell.addEventListener('touchend', () => {
+                clearTimeout(longPressTimer);
+            });
+            cell.addEventListener('touchmove', () => {
+                clearTimeout(longPressTimer);
+            });
+            gridEl.appendChild(cell);
+        }
+    }
+
+    updateCounter();
+    updateAllCells();
+}
+
+// ----- 放置小狗（第一次点击后） -----
+function placeDogs(safeRow, safeCol) {
+    const { rows, cols, dogs } = config;
+    const safeZone = new Set();
+    for (let dr = -1; dr <= 1; dr++) {
+        for (let dc = -1; dc <= 1; dc++) {
+            const nr = safeRow + dr, nc = safeCol + dc;
+            if (nr >= 0 && nr < rows && nc >= 0 && nc < cols) {
+                safeZone.add(nr + ',' + nc);
+            }
+        }
+    }
+    const candidates = [];
+    for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+            if (!safeZone.has(r + ',' + c)) {
+                candidates.push([r, c]);
+            }
+        }
+    }
+    // 如果候选不够，只排除点击的那一个
+    if (candidates.length < dogs) {
+        candidates.length = 0;
+        for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+                if (r !== safeRow || c !== safeCol) {
+                    candidates.push([r, c]);
+                }
+            }
+        }
+    }
+    // 随机选狗
+    const shuffled = candidates.sort(() => Math.random() - 0.5);
+    const selected = shuffled.slice(0, dogs);
+    for (const [r, c] of selected) {
+        grid[r][c].dog = true;
+        dogPositions.add(r + ',' + c);
+    }
+    // 计算邻接数
+    for (let r = 0; r < rows; r++) {
         for (let c = 0; c < cols; c++) {
             if (grid[r][c].dog) continue;
             let count = 0;
@@ -20,17 +408,16 @@
 function handleLeftClick(row, col) {
     if (gameOver) return;
     const cell = grid[row][col];
-    if (cell.flagged) {
-        showToast('🚩 已插旗，长按取消', 600);
-        return;
-    }
+    if (cell.flagged) return;
     if (cell.revealed) {
+        // 和弦展开（数字与旗帜匹配时）
         if (cell.adjCount > 0) {
             chordReveal(row, col);
         }
         return;
     }
 
+    // 第一次点击
     if (firstClick) {
         placeDogs(row, col);
         firstClick = false;
@@ -71,6 +458,7 @@ function revealCell(row, col) {
         el.textContent = cell.adjCount;
         el.classList.add('n' + cell.adjCount);
     } else {
+        // 空白格，BFS展开
         for (let dr = -1; dr <= 1; dr++) {
             for (let dc = -1; dc <= 1; dc++) {
                 if (dr === 0 && dc === 0) continue;
@@ -91,8 +479,10 @@ function revealCell(row, col) {
 function chordReveal(row, col) {
     const { rows, cols } = config;
     const cell = grid[row][col];
-    if (!cell.revealed || cell.adjCount === 0) return;
+    if (!cell.revealed) return;
+    if (cell.adjCount === 0) return;
 
+    // 统计周围旗帜数
     let flagCountAround = 0;
     for (let dr = -1; dr <= 1; dr++) {
         for (let dc = -1; dc <= 1; dc++) {
@@ -133,11 +523,14 @@ function gameOverHandler(row, col) {
         timerInterval = null;
     }
 
+    // 踩到的狗显示 😊
     const el = getCellElement(row, col);
     el.textContent = '😊';
     el.classList.add('revealed', 'mine-exploded');
+
     resetBtn.textContent = '😵';
 
+    // 显示所有狗
     for (const key of dogPositions) {
         const [r, c] = key.split(',').map(Number);
         const cell = grid[r][c];
@@ -149,6 +542,7 @@ function gameOverHandler(row, col) {
         }
     }
 
+    // 标记错误旗帜
     for (let r = 0; r < config.rows; r++) {
         for (let c = 0; c < config.cols; c++) {
             const cell = grid[r][c];
@@ -163,7 +557,7 @@ function gameOverHandler(row, col) {
     showModal('💀', '哎呀！踩到小狗了！🐶', '🐾 再来一局');
 }
 
-// ----- 胜利 -----
+// ----- 胜利检测 -----
 function checkWin() {
     const total = config.rows * config.cols;
     if (revealedCount === total - config.dogs) {
@@ -174,6 +568,7 @@ function checkWin() {
         }
         resetBtn.textContent = '😎';
 
+        // 显示所有狗（胜利庆祝）
         for (const key of dogPositions) {
             const [r, c] = key.split(',').map(Number);
             const e = getCellElement(r, c);
@@ -186,7 +581,7 @@ function checkWin() {
     }
 }
 
-// ----- UI辅助 -----
+// ----- UI 辅助 -----
 function getCellElement(row, col) {
     return gridEl.querySelector(`[data-r="${row}"][data-c="${col}"]`);
 }
@@ -198,6 +593,7 @@ function updateAllCells() {
             const cell = grid[r][c];
             const el = getCellElement(r, c);
             if (cell.revealed) {
+                // 已经显示过的不再重复处理（但防止重置）
                 if (!el.classList.contains('revealed')) {
                     el.classList.add('revealed');
                     if (cell.adjCount > 0) {
@@ -249,6 +645,7 @@ modalBtn.addEventListener('click', () => {
     initGame(getCurrentLevel());
 });
 
+// 点击弹窗外部关闭（但移动端容易误触，保留）
 modal.addEventListener('click', (e) => {
     if (e.target === modal) {
         modal.classList.remove('active');
@@ -279,6 +676,7 @@ resetBtn.addEventListener('click', () => {
 });
 
 // ----- 启动 -----
+// 默认选中初级
 document.querySelector('#menu button[data-level="easy"]').classList.add('active');
 initGame('easy');
 </script>
