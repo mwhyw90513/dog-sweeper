@@ -241,6 +241,7 @@
 <script>
 // ============================================================
 //  DogSweeper - 移动端扫雷（找小狗）
+//  操作：单击翻开，双击插旗
 // ============================================================
 
 // ----- 配置 -----
@@ -249,6 +250,9 @@ const LEVELS = {
     medium: { rows: 16, cols: 16, dogs: 40 },
     hard:   { rows: 16, cols: 30, dogs: 99 }
 };
+
+const DOUBLE_TAP_DELAY = 300;   // 双击判定间隔（毫秒）
+const DOUBLE_TAP_MOVE = 15;     // 双击允许的手指移动像素（容错）
 
 let config = { rows: 9, cols: 9, dogs: 10 };
 
@@ -277,7 +281,6 @@ document.addEventListener('contextmenu', e => e.preventDefault());
 
 // ----- 初始化 -----
 function initGame(level = 'easy') {
-    // 停止计时器
     if (timerInterval) {
         clearInterval(timerInterval);
         timerInterval = null;
@@ -289,7 +292,6 @@ function initGame(level = 'easy') {
     config = LEVELS[level];
     const { rows, cols, dogs } = config;
 
-    // 重置状态
     grid = [];
     dogPositions = new Set();
     revealedCount = 0;
@@ -298,7 +300,6 @@ function initGame(level = 'easy') {
     firstClick = true;
     resetBtn.textContent = '🐾';
 
-    // 生成空网格
     for (let r = 0; r < rows; r++) {
         grid[r] = [];
         for (let c = 0; c < cols; c++) {
@@ -311,7 +312,6 @@ function initGame(level = 'easy') {
         }
     }
 
-    // 渲染网格
     gridEl.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
     gridEl.innerHTML = '';
     for (let r = 0; r < rows; r++) {
@@ -320,31 +320,80 @@ function initGame(level = 'easy') {
             cell.className = 'cell';
             cell.dataset.r = r;
             cell.dataset.c = c;
-            cell.addEventListener('click', () => handleLeftClick(r, c));
-            cell.addEventListener('contextmenu', (e) => {
-                e.preventDefault();
-                handleRightClick(r, c);
-            });
-            // 移动端长按触发右键（插旗）
-            let longPressTimer = null;
-            cell.addEventListener('touchstart', (e) => {
-                longPressTimer = setTimeout(() => {
-                    e.preventDefault();
-                    handleRightClick(r, c);
-                }, 400);
-            });
-            cell.addEventListener('touchend', () => {
-                clearTimeout(longPressTimer);
-            });
-            cell.addEventListener('touchmove', () => {
-                clearTimeout(longPressTimer);
-            });
+            bindTapEvents(cell, r, c);
             gridEl.appendChild(cell);
         }
     }
 
     updateCounter();
     updateAllCells();
+}
+
+// ----- 单击/双击检测 -----
+function bindTapEvents(el, r, c) {
+    let lastTapTime = 0;
+    let lastTapX = 0;
+    let lastTapY = 0;
+    let singleTapTimer = null;
+    let touchStartX = 0;
+    let touchStartY = 0;
+    let moved = false;
+
+    el.addEventListener('touchstart', (e) => {
+        const t = e.touches[0];
+        touchStartX = t.clientX;
+        touchStartY = t.clientY;
+        moved = false;
+    }, { passive: true });
+
+    el.addEventListener('touchmove', (e) => {
+        const t = e.touches[0];
+        const dx = Math.abs(t.clientX - touchStartX);
+        const dy = Math.abs(t.clientY - touchStartY);
+        if (dx > DOUBLE_TAP_MOVE || dy > DOUBLE_TAP_MOVE) {
+            moved = true;
+        }
+    }, { passive: true });
+
+    el.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        if (moved || gameOver) return;
+
+        const now = Date.now();
+        const t = e.changedTouches[0];
+        const dx = Math.abs(t.clientX - lastTapX);
+        const dy = Math.abs(t.clientY - lastTapY);
+
+        if (now - lastTapTime < DOUBLE_TAP_DELAY && dx < DOUBLE_TAP_MOVE && dy < DOUBLE_TAP_MOVE) {
+            // 双击 → 插旗
+            clearTimeout(singleTapTimer);
+            singleTapTimer = null;
+            lastTapTime = 0;
+            if (navigator.vibrate) navigator.vibrate(30);
+            handleRightClick(r, c);
+        } else {
+            // 单击 → 延迟判定，等第二次
+            lastTapTime = now;
+            lastTapX = t.clientX;
+            lastTapY = t.clientY;
+            clearTimeout(singleTapTimer);
+            singleTapTimer = setTimeout(() => {
+                singleTapTimer = null;
+                lastTapTime = 0;
+                handleLeftClick(r, c);
+            }, DOUBLE_TAP_DELAY);
+        }
+    }, { passive: false });
+
+    // 桌面端兼容
+    el.addEventListener('click', (e) => {
+        if ('ontouchstart' in window) return;
+        handleLeftClick(r, c);
+    });
+    el.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        handleRightClick(r, c);
+    });
 }
 
 // ----- 放置小狗（第一次点击后） -----
@@ -367,7 +416,6 @@ function placeDogs(safeRow, safeCol) {
             }
         }
     }
-    // 如果候选不够，只排除点击的那一个
     if (candidates.length < dogs) {
         candidates.length = 0;
         for (let r = 0; r < rows; r++) {
@@ -378,14 +426,12 @@ function placeDogs(safeRow, safeCol) {
             }
         }
     }
-    // 随机选狗
     const shuffled = candidates.sort(() => Math.random() - 0.5);
     const selected = shuffled.slice(0, dogs);
     for (const [r, c] of selected) {
         grid[r][c].dog = true;
         dogPositions.add(r + ',' + c);
     }
-    // 计算邻接数
     for (let r = 0; r < rows; r++) {
         for (let c = 0; c < cols; c++) {
             if (grid[r][c].dog) continue;
@@ -410,25 +456,18 @@ function handleLeftClick(row, col) {
     const cell = grid[row][col];
     if (cell.flagged) return;
     if (cell.revealed) {
-        // 和弦展开（数字与旗帜匹配时）
-        if (cell.adjCount > 0) {
-            chordReveal(row, col);
-        }
+        if (cell.adjCount > 0) chordReveal(row, col);
         return;
     }
-
-    // 第一次点击
     if (firstClick) {
         placeDogs(row, col);
         firstClick = false;
         startTimer();
     }
-
     if (cell.dog) {
         gameOverHandler(row, col);
         return;
     }
-
     revealCell(row, col);
 }
 
@@ -436,7 +475,6 @@ function handleRightClick(row, col) {
     if (gameOver) return;
     const cell = grid[row][col];
     if (cell.revealed) return;
-
     cell.flagged = !cell.flagged;
     flagCount += cell.flagged ? 1 : -1;
     updateCounter();
@@ -447,18 +485,14 @@ function revealCell(row, col) {
     const { rows, cols } = config;
     const cell = grid[row][col];
     if (cell.revealed || cell.flagged || cell.dog) return;
-
     cell.revealed = true;
     revealedCount++;
-
     const el = getCellElement(row, col);
     el.classList.add('revealed');
-
     if (cell.adjCount > 0) {
         el.textContent = cell.adjCount;
         el.classList.add('n' + cell.adjCount);
     } else {
-        // 空白格，BFS展开
         for (let dr = -1; dr <= 1; dr++) {
             for (let dc = -1; dc <= 1; dc++) {
                 if (dr === 0 && dc === 0) continue;
@@ -472,7 +506,6 @@ function revealCell(row, col) {
             }
         }
     }
-
     checkWin();
 }
 
@@ -481,8 +514,6 @@ function chordReveal(row, col) {
     const cell = grid[row][col];
     if (!cell.revealed) return;
     if (cell.adjCount === 0) return;
-
-    // 统计周围旗帜数
     let flagCountAround = 0;
     for (let dr = -1; dr <= 1; dr++) {
         for (let dc = -1; dc <= 1; dc++) {
@@ -493,7 +524,6 @@ function chordReveal(row, col) {
             }
         }
     }
-
     if (flagCountAround === cell.adjCount) {
         for (let dr = -1; dr <= 1; dr++) {
             for (let dc = -1; dc <= 1; dc++) {
@@ -518,19 +548,11 @@ function chordReveal(row, col) {
 function gameOverHandler(row, col) {
     if (gameOver) return;
     gameOver = true;
-    if (timerInterval) {
-        clearInterval(timerInterval);
-        timerInterval = null;
-    }
-
-    // 踩到的狗显示 😊
+    if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
     const el = getCellElement(row, col);
     el.textContent = '😊';
     el.classList.add('revealed', 'mine-exploded');
-
     resetBtn.textContent = '😵';
-
-    // 显示所有狗
     for (const key of dogPositions) {
         const [r, c] = key.split(',').map(Number);
         const cell = grid[r][c];
@@ -541,8 +563,6 @@ function gameOverHandler(row, col) {
             cell.revealed = true;
         }
     }
-
-    // 标记错误旗帜
     for (let r = 0; r < config.rows; r++) {
         for (let c = 0; c < config.cols; c++) {
             const cell = grid[r][c];
@@ -553,7 +573,6 @@ function gameOverHandler(row, col) {
             }
         }
     }
-
     showModal('💀', '哎呀！踩到小狗了！🐶', '🐾 再来一局');
 }
 
@@ -562,13 +581,8 @@ function checkWin() {
     const total = config.rows * config.cols;
     if (revealedCount === total - config.dogs) {
         gameOver = true;
-        if (timerInterval) {
-            clearInterval(timerInterval);
-            timerInterval = null;
-        }
+        if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
         resetBtn.textContent = '😎';
-
-        // 显示所有狗（胜利庆祝）
         for (const key of dogPositions) {
             const [r, c] = key.split(',').map(Number);
             const e = getCellElement(r, c);
@@ -576,7 +590,6 @@ function checkWin() {
             e.classList.add('revealed');
             e.style.background = '#ffff99';
         }
-
         showModal('🎉', '你找到了所有小狗！🐶🐶🐶', '🐾 再来一局');
     }
 }
@@ -593,7 +606,6 @@ function updateAllCells() {
             const cell = grid[r][c];
             const el = getCellElement(r, c);
             if (cell.revealed) {
-                // 已经显示过的不再重复处理（但防止重置）
                 if (!el.classList.contains('revealed')) {
                     el.classList.add('revealed');
                     if (cell.adjCount > 0) {
@@ -625,10 +637,7 @@ function startTimer() {
     timerInterval = setInterval(() => {
         seconds++;
         timerEl.textContent = String(seconds).padStart(3, '0');
-        if (seconds >= 999) {
-            clearInterval(timerInterval);
-            timerInterval = null;
-        }
+        if (seconds >= 999) { clearInterval(timerInterval); timerInterval = null; }
     }, 1000);
 }
 
@@ -639,13 +648,10 @@ function showModal(title, msg, btnText) {
     modalBtn.textContent = btnText;
     modal.classList.add('active');
 }
-
 modalBtn.addEventListener('click', () => {
     modal.classList.remove('active');
     initGame(getCurrentLevel());
 });
-
-// 点击弹窗外部关闭（但移动端容易误触，保留）
 modal.addEventListener('click', (e) => {
     if (e.target === modal) {
         modal.classList.remove('active');
@@ -658,7 +664,6 @@ function getCurrentLevel() {
     const active = document.querySelector('#menu button.active');
     return active ? active.dataset.level : 'easy';
 }
-
 document.querySelectorAll('#menu button').forEach(btn => {
     btn.addEventListener('click', () => {
         document.querySelectorAll('#menu button').forEach(b => b.classList.remove('active'));
@@ -669,14 +674,11 @@ document.querySelectorAll('#menu button').forEach(btn => {
 
 // ----- 重置 -----
 resetBtn.addEventListener('click', () => {
-    if (modal.classList.contains('active')) {
-        modal.classList.remove('active');
-    }
+    if (modal.classList.contains('active')) modal.classList.remove('active');
     initGame(getCurrentLevel());
 });
 
 // ----- 启动 -----
-// 默认选中初级
 document.querySelector('#menu button[data-level="easy"]').classList.add('active');
 initGame('easy');
 </script>
